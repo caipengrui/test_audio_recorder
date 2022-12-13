@@ -66,16 +66,27 @@ public class FirstFragment extends Fragment {
                         @Override
                         public void run() {
                             try {
+                                audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, 16000,
+                                        AudioFormat.CHANNEL_CONFIGURATION_STEREO, AudioFormat.ENCODING_PCM_16BIT,
+                                        recordBufSize, AudioTrack.MODE_STREAM);
+//                                audioTrack.write(audioData, 0, audioData.length);
+//                                audioTrack.play();
                                 InputStream in = new FileInputStream(new File(getContext().getCacheDir(), "recordCache"));
                                 try {
-                                    ByteArrayOutputStream out = new ByteArrayOutputStream(
-                                            in.available());
-                                    for (int b; (b = in.read()) != -1; ) {
-                                        out.write(b);
+//                                    ByteArrayOutputStream out = new ByteArrayOutputStream(
+//                                            in.available());
+                                    byte buffer[] = new byte[4096];
+                                    synchronized (audioTrack) {
+                                        if (audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
+                                            audioTrack.play();
+                                        }
+                                        for (int b; (b = in.read(buffer, 0, 4096)) != -1; ) {
+                                            audioTrack.write(buffer, 0, b);
+                                        }
                                     }
-                                    Log.d(TAG, "Got the data");
-                                    byte[] audioData = out.toByteArray();
-                                    createAudioTrack(audioData);
+//                                    Log.d(TAG, "Got the data");
+//                                    byte[] audioData = out.toByteArray();
+//                                    createAudioTrack(audioData);
                                 } finally {
                                     in.close();
                                 }
@@ -102,18 +113,25 @@ public class FirstFragment extends Fragment {
         binding.buttonRecord.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                if (audioRecord == null) {
-                    createAudioRecord();
-                }
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (audioRecord == null) {
+                            createAudioRecord();
+                        }
+                    }
+                });
+
                 if (!isRecording) {
-                    audioRecord.startRecording();
+
                     isRecording = true;
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
+                            audioRecord.startRecording();
                             FileOutputStream os = null;
-                            int read;
-                            byte data[] = new byte[recordBufSize];
+                            int read = -3;
+                            byte data[] = new byte[recordBufSize * 2];
 
                             try {
                                 String filename = new File(getContext().getCacheDir(), "recordCache").getPath();
@@ -126,18 +144,20 @@ public class FirstFragment extends Fragment {
                                 while (isRecording) {
                                     synchronized (audioRecord) {
                                         if (audioRecord != null) {
-                                            read = audioRecord.read(data, 0, recordBufSize);
-
-                                            // 如果读取音频数据没有出现错误，就将数据写入到文件
-                                            if (AudioRecord.ERROR_INVALID_OPERATION != read) {
-                                                try {
-                                                    os.write(data);
-                                                } catch (IOException e) {
-                                                    e.printStackTrace();
-                                                }
-                                            }
+                                            read = audioRecord.read(data, 0, recordBufSize * 2);
+                                        } else {
+                                            read = -3;
                                         }
                                     }
+                                    // 如果读取音频数据没有出现错误，就将数据写入到文件
+                                    if (AudioRecord.ERROR_INVALID_OPERATION != read) {
+                                        try {
+                                            os.write(data);
+                                        } catch (IOException e) {
+                                            e.printStackTrace();
+                                        }
+                                    }
+
                                 }
 
                                 try {
@@ -158,11 +178,51 @@ public class FirstFragment extends Fragment {
                 }
             }
         });
+
+        binding.buttonReformat.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        File file = new File(getContext().getCacheDir(), "recordCache");
+                        if (file.exists()) {
+                            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                            try {
+                                FileInputStream fileInputStream = new FileInputStream(file);
+                                byte buffer[] = new byte[4096];
+                                int len;
+                                while ((len = fileInputStream.read(buffer)) > 0) {
+                                    byteArrayOutputStream.write(buffer);
+                                }
+                                byte[] readBuffer = byteArrayOutputStream.toByteArray();
+                                byte[] sendBuffer = new byte[readBuffer.length / 2];
+                                for (int i = 0; i < readBuffer.length - 1; i += 2) {
+                                    if ((readBuffer[i + 1] & 0x80) == 0x80) {
+                                        sendBuffer[i / 2] = (byte) (readBuffer[i + 1] & 0x7f);
+                                    } else {
+                                        sendBuffer[i / 2] = (byte) (readBuffer[i + 1] + 0x80);
+                                    }
+                                }
+                                FileOutputStream fos = new FileOutputStream(new File(getContext().getCacheDir(), "recordCache1"));
+                                fos.write(sendBuffer);
+                                fos.flush();
+                                fos.close();
+                            } catch (FileNotFoundException e) {
+                                e.printStackTrace();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                });
+            }
+        });
     }
 
     public void createAudioRecord() {
-        int frequency = 44100;
-        int channelConfiguration = AudioFormat.CHANNEL_IN_MONO;
+        int frequency = 16000;
+        int channelConfiguration = AudioFormat.CHANNEL_CONFIGURATION_STEREO;
         recordBufSize = AudioRecord.getMinBufferSize(frequency, channelConfiguration, AudioFormat.ENCODING_PCM_16BIT);  //audioRecord能接受的最小的buffer大小
         if (ActivityCompat.checkSelfPermission(this.getActivity(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             // TODO: Consider calling
@@ -174,15 +234,11 @@ public class FirstFragment extends Fragment {
             // for ActivityCompat#requestPermissions for more details.
             return;
         }
-        audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, frequency, channelConfiguration, AudioFormat.ENCODING_PCM_16BIT, recordBufSize);
+        audioRecord = new AudioRecord(7, frequency, channelConfiguration, AudioFormat.ENCODING_PCM_16BIT, recordBufSize * 2);
     }
 
     public void createAudioTrack(byte[] audioData) {
-        this.audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, 44100,
-                AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT,
-                audioData.length, AudioTrack.MODE_STATIC);
-        this.audioTrack.write(audioData, 0, audioData.length);
-        audioTrack.play();
+
     }
 
     @Override

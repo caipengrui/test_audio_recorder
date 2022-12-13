@@ -23,8 +23,18 @@
         android:layout_height="wrap_content"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/button_reformat"
         app:layout_constraintTop_toBottomOf="@id/button_first"/>
+
+    <Button
+        android:id="@+id/button_reformat"
+        android:text="@string/reformat"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/button_record"/>
 
     <TextView
         android:id="@+id/textview_first"
